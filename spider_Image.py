@@ -1,73 +1,59 @@
-#coding:utf-8
-
-import urllib.parse
-import urllib2
-import socket
-import ssl
-import re
+# -*- coding: utf-8 -*
 import requests
-import threading
+#import lxml
+from bs4 import BeautifulSoup
+import os
+import urllib
+import urllib2
 
-####设置最大线程锁 一次接收20个线程
-thread_lock=threading.BoundedSemaphore(value=20)
+class memory():
+    def all_url(self, url):
+        url='http://www.iopen.cn/xhxc/'
+        html = self.request(url)  ##调用request函数把套图地址传进去会返回给我们一个response
+        all_a = BeautifulSoup(html.text, 'html.parser').find('div', class_='all').find_all('a')
+        for a in all_a:
+            title = a.get_text()
+            print(u'开始保存：', title)  ##加点提示不然太枯燥了
+            path = str(title).replace("?", '_')  ##我注意到有个标题带有 ？  这个符号Windows系统是不能创建文件夹的所以要替换掉
+            self.mkdir(path)  ##调用mkdir函数创建文件夹！这儿path代表的是标题title哦！！！！！不要糊涂了哦！
+            href = a['href']
+            self.html(href)  ##调用html函数把href参数传递过去！href是啥还记的吧？ 就是套图的地址哦！！不要迷糊了哦！
 
-###通过url获取数据
-def get_page(url):
-    page = requests.get(url)
-    page=page.content
-    ###将bytes转成字符串
-    page=page.decode('utf-8')
-    return page
+    def html(self, href):  ##这个函数是处理套图地址获得图片的页面地址
+        html = self.request(href)
+        max_span = BeautifulSoup(html.text, 'html.parser').find('div', class_='pagenavi').find_all('span')[-2].get_text()
+        for page in range(1, int(max_span) + 1):
+            page_url = href + '/' + str(page)
 
-## label  '校花'
-def pages_from_duitang(label):
-    pages=[]
-    url='https://www.duitang.com/napi/blog/list/by_search/?kw={}&start={}&limit=1000'
-    ###将中文转换呈url编码
-    label=urllib.parse.quote(label)
-    for index in range(0,3600,100):
-        u=url.format(label,index)
-        print(u)
-        page=get_page(u)
-        pages.append(page)
-    return pages
+        self.img(page_url)  ##调用img函数
 
+    def img(self, page_url):  ##这个函数处理图片页面地址获得图片的实际地址
+        img_html = self.request(page_url)
+        img_url = BeautifulSoup(img_html.text, 'html.parser').find('div', class_='main-image').find('img')['src']
+        self.save(img_url)
 
-def findall_in_page(page,startpart,endpart):
-    all_strings=[]
-    end=0
-    while page.find(startpart,end)!=-1:
-        start=page.find(startpart,end)+len(startpart)
-        end=page.find(endpart,start)
-        string=page[start:end]
-        all_strings.append(string)
-    return all_strings
+    def save(self, img_url):  ##这个函数保存图片
+        name = img_url[-9:-4]
+        img = self.request(img_url)
+        f = open(name + '.jpg', 'ab')
+        f.write(img.content)
+        f.close()
 
-def pic_urls_from_pages(pages):
-    pic_urls=[]
-    for page in pages:
-        urls=findall_in_page(page,'path":"','"')
-        pic_urls.extend(urls)
-    return pic_urls
+    def mkdir(self, path):  ##这个函数创建文件夹
+        path = path.strip()
+        isExists = os.path.exists(os.path.join("/Users/chenhaoxin/Desktop/memory/Image", path))
+        if not isExists:
+            print(u'建了一个名字叫做', path, u'的文件夹！')
+            os.makedirs(os.path.join("/Users/chenhaoxin/Desktop/memory/Image", path))
+            os.chdir(os.path.join("/Users/chenhaoxin/Desktop/memory/Image", path))  ##切换到目录
+            return True
+        else:
+            print(u'名字叫做', path, u'的文件夹已经存在了！')
+            return False
 
-def download_pics(url):
-    r=requests.get(url)
-    path='../memory/pics/'+str(n)+'.jpg'
-    with open(path,'wb') as f:
-        f.write(r.content)
-    ##下载完以后解锁
-    thread_lock.release()
+    def request(self, url):  ##这个函数获取网页的response 然后返回
+        headers = {
+            'User-Agent': "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/22.0.1207.1 Safari/537.1"}
+        content = requests.get(url, headers=headers)
+        return content
 
-def main(label):
-    pages=pages_from_duitang(label)
-    pic_urls=pic_urls_from_pages(pages)
-    n=0
-    for url in pic_urls:
-        n+=1
-        print('正在下载第{}张图片'.format(n))
-        ###上锁
-        thread_lock.acquire()
-        t=threading.Thread(target=download_pics,args=(url,n))
-        t.start()
-
-main('校花')
